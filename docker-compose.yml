@@ -1,0 +1,95 @@
+services:
+  api:
+    build: ./API
+    image: demo-api:latest
+    container_name: demo-api
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      POSTGRES_USER: itadmin
+      POSTGRES_PASSWORD: password1234
+      POSTGRES_DB: demo_db
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+    depends_on:
+      db:
+        condition: service_healthy
+      db_setup:
+        condition: service_started
+    ports:
+      - "8000:8000"
+    networks:
+      - demo-net
+
+  mcp_server:
+    build: ./MCP_SERVER
+    image: demo-mcp-server:latest
+    container_name: demo-mcp-server
+    environment:
+      API_URL: http://api:8000
+    depends_on:
+      - api
+    ports:
+      - "9001:9001"
+    networks:
+      - demo-net
+
+  db:
+    build: ./DB
+    image: demo-postgres:latest
+    container_name: demo-db
+    environment:
+      POSTGRES_USER: itadmin
+      POSTGRES_PASSWORD: password1234
+      POSTGRES_DB: demo_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data # Persistent named volume for DB data
+    networks:
+      - demo-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U itadmin -d demo_db"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
+
+  db_setup:
+    build: ./API
+    image: demo-api:latest
+    container_name: demo-db-setup
+    command: ["python", "init_db.py"]
+    environment:
+      POSTGRES_USER: itadmin
+      POSTGRES_PASSWORD: password1234
+      POSTGRES_DB: demo_db
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - demo-net
+
+  db_seed:
+    build: ./API
+    image: demo-api:latest
+    container_name: demo-db-seed
+    command: ["python", "api_seed.py"]
+    working_dir: /app
+    environment:
+      API_URL: http://api:8000
+    depends_on:
+      db_setup:
+        condition: service_started
+      api:
+        condition: service_started
+    networks:
+      - demo-net
+
+volumes:
+  db_data:
+
+networks:
+  demo-net:
+    driver: bridge
